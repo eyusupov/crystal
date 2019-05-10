@@ -7,6 +7,7 @@
 module GC
   module RefCount
     macro included 
+      # TODO: check if atomic is already atomic on x86? Does llvm generate optimal code?
       @reference_count = Atomic.new(0_u32)
     end
 
@@ -27,6 +28,7 @@ module GC
     end
 
     def free
+      # other client 
       count = @reference_count.get
       puts "Was asked to dereference still alive object #{self} (#{count} refrences)"
       # TODO: put a fence with release memory ordering
