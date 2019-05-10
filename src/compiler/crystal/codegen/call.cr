@@ -3,7 +3,7 @@ require "./codegen"
 class Crystal::CodeGenVisitor
   def visit(node : Call)
     if node.expanded
-      raise "BUG: #{node} at #{node.location} should have been expanded"
+      raise "BUG: #{node} at #{node.location} should not have been expanded"
     end
 
     target_defs = node.target_defs
@@ -22,12 +22,12 @@ class Crystal::CodeGenVisitor
 
     call_args, has_out = prepare_call_args node, owner
 
-    # It can happen that one of the arguments caused an unreacahble
+    # It can happen that one of the arguments caused an unreachable
     # to happen, so we must stop here
     return false if @builder.end
 
     if block = node.block
-      # A block might turn into a proc literal but not be used if it particpates in a dispatch
+      # A block might turn into a proc literal but not be used if it participates in a dispatch
       if (fun_literal = block.fun_literal) && node.target_def.uses_block_arg?
         codegen_call_with_block_as_fun_literal(node, fun_literal, owner, call_args)
       else
@@ -328,7 +328,7 @@ class Crystal::CodeGenVisitor
       new_vars["%self"] = LLVMVar.new(@last, node_obj.type, true)
     end
 
-    # Get type if of args and create arg vars
+    # Get type ids of args and create arg vars
     arg_type_ids = node.args.map_with_index do |arg, i|
       @needs_value = true
       accept arg

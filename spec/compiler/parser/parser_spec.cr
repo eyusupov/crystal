@@ -14,9 +14,7 @@ private def it_parses(string, expected_node, file = __FILE__, line = __LINE__)
     # union that's not exactly ASTNode). Not having to write `[...] of ASTNode`
     # simplifies testing a bit.
     local_expected_node = expected_node
-    if local_expected_node.is_a?(Array)
-      local_expected_node = local_expected_node.map(&.as(ASTNode))
-    end
+    local_expected_node.map!(&.as(ASTNode)) if local_expected_node.is_a?(Array)
 
     node.should eq(Expressions.from(local_expected_node))
   end
