@@ -11,10 +11,9 @@
 class WeakRef(T)
   @target : Void*
 
-  def initialize(target : T)
-    @target = target.as(Void*)
-    if GC.is_heap_ptr(@target)
-      GC.register_disappearing_link(pointerof(@target))
+  def initialize(@target : T)
+    if {{ T.is_a? Reference }}
+      GC.register_weak_ref(pointerof(@target.as(Void*)))
     end
   end
 

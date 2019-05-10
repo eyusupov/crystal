@@ -5,6 +5,40 @@
 {% end %}
 
 module GC
+  module RefCount
+    macro included 
+      @reference_count = Atomic.new(0_u32)
+    end
+
+    def reference_count
+      @reference_count.get
+    end
+
+    def add_reference
+      # TODO: use release memory order
+      @reference_count.add(1)
+    end
+
+    def dereference
+      # TODO: use acquire memory ordering
+      count = @reference_count.sub(1)
+      raise "Negative amount of references for #{self}: #{count}" if count < 0
+      GC.free(self) if count.zero?
+    end
+
+    def free
+      count = @reference_count.get
+      puts "Was asked to dereference still alive object #{self} (#{count} refrences)"
+      # TODO: put a fence with release memory ordering
+      {% for ivar in @type.instance_vars.select(&.is_a? Reference) %}
+        puts "Dereferencing {{ ivar }}"
+        @{{ ivar }}.dereference
+      {% end %}
+      # TODO: add fence
+      GC.free(self)
+    end
+  end
+
   struct Stats
   end
 

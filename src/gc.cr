@@ -47,15 +47,6 @@ fun __crystal_realloc64(ptr : Void*, size : UInt64) : Void*
 end
 
 module GC
-  record Stats,
-    # collections : LibC::ULong,
-    # bytes_found : LibC::Long,
-    heap_size : LibC::ULong,
-    free_bytes : LibC::ULong,
-    unmapped_bytes : LibC::ULong,
-    bytes_since_gc : LibC::ULong,
-    total_bytes : LibC::ULong
-
   def self.malloc(size : Int)
     malloc(LibC::SizeT.new(size))
   end
@@ -69,7 +60,9 @@ module GC
   end
 end
 
-{% if flag?(:gc_none) %}
+{% if flag?(:gc_refcount) %}
+  require "gc/refcount"
+{% elsif flag?(:gc_none) %}
   require "gc/none"
 {% else %}
   require "gc/boehm"

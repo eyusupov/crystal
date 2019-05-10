@@ -13,6 +13,10 @@
 # The instance's memory is automatically freed (garbage-collected) when
 # the instance is no longer referred by any other entity in the program.
 class Reference
+  {% if flag?(:gc_refcount) %}
+  extend GC::RefCount
+  {% end %}
+
   # Returns `true` if this reference is the same as *other*. Invokes `same?`.
   def ==(other : self)
     same?(other)

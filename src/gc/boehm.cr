@@ -71,6 +71,15 @@ lib LibGC
 end
 
 module GC
+  record Stats,
+    # collections : LibC::ULong,
+    # bytes_found : LibC::Long,
+    heap_size : LibC::ULong,
+    free_bytes : LibC::ULong,
+    unmapped_bytes : LibC::ULong,
+    bytes_since_gc : LibC::ULong,
+    total_bytes : LibC::ULong
+
   # :nodoc:
   def self.malloc(size : LibC::SizeT) : Void*
     LibGC.malloc(size)
