@@ -147,6 +147,7 @@ class Crystal::CodeGenVisitor
           else
             global.initializer = llvm_type(type).null
             assign global, type, node.type, @last
+            accept Call.new(node, "dereference", [] of ASTNode) if node.type.reference_like?
           end
 
           ret

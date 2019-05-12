@@ -403,8 +403,8 @@ end
 # by a newline. Returns *object*.
 #
 # See also: `Object#pretty_print(pp)`.
-def pp(object)
-  PrettyPrint.format(object, STDOUT, 79)
+def pp(object, indent = 0)
+  PrettyPrint.format(object, STDOUT, 79, )
   puts
   object
 end
@@ -414,10 +414,7 @@ end
 #
 # See also: `Object#pretty_print(pp)`.
 def pp(*objects)
-  objects.each do |obj|
-    pp obj
-  end
-  objects
+  objects.tap.each { |obj| pp obj }
 end
 
 # Pretty prints *objects* to `STDOUT`, followed

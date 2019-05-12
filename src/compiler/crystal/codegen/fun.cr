@@ -62,8 +62,6 @@ class Crystal::CodeGenVisitor
     old_debug_location = @current_debug_location
     old_fun = context.fun
 
-    old_needs_value = @needs_value
-
     with_cloned_context do |old_context|
       context.type = self_type
       context.vars = LLVMVars.new
@@ -77,7 +75,6 @@ class Crystal::CodeGenVisitor
       @ensure_exception_handlers = nil
       @rescue_block = nil
       @catch_pad = nil
-      @needs_value = true
 
       args = codegen_fun_signature(mangled_name, target_def, self_type, is_fun_literal, is_closure)
 
@@ -157,7 +154,7 @@ class Crystal::CodeGenVisitor
 
           codegen_primitive(nil, body, target_def, primitive_params)
         else
-          accept target_def.body
+          request_value { accept target_def.body }
         end
 
         codegen_return(target_def)
@@ -178,7 +175,6 @@ class Crystal::CodeGenVisitor
       @catch_pad = old_catch_pad
       @entry_block = old_entry_block
       @alloca_block = old_alloca_block
-      @needs_value = old_needs_value
 
       if @debug.line_numbers?
         # set_current_debug_location associates a scope from the current fun,

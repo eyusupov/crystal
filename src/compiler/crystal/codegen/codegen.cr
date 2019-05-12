@@ -216,12 +216,8 @@ module Crystal
       @last = llvm_nil
       @fun_literal_count = 0
 
-      # This flag is to generate less code. If there's an if in the middle
-      # of a series of expressions we don't need the result, so there's no
-      # need to build a phi for it.
-      # Also, we don't need the value of unions returned from calls if they
-      # are not going to be used.
-      @needs_value = true
+      # We only need the value in the call arguments, initialization or assignment.
+      @needs_value = false
 
       @empty_md_list = metadata([] of Int32)
       @unused_fun_defs = [] of FunDef
@@ -231,7 +227,7 @@ module Crystal
 
       # We need to define __crystal_malloc and __crystal_realloc as soon as possible,
       # to avoid some memory being allocated with plain malloc.
-      codgen_well_known_functions @node
+      codegen_well_known_functions @node
 
       initialize_argv_and_argc
 
@@ -314,7 +310,7 @@ module Crystal
       end
     end
 
-    def codgen_well_known_functions(node)
+    def codegen_well_known_functions(node)
       visitor = CodegenWellKnownFunctions.new(self)
       node.accept visitor
     end
@@ -328,6 +324,9 @@ module Crystal
     end
 
     def finish
+      # TODO: check reference counters
+      # We might need to derefence lvars from main here
+      # or globals
       codegen_return @main_ret_type
 
       # If there are no instructions in the alloca block and the
@@ -612,16 +611,16 @@ module Crystal
     end
 
     def visit(node : Expressions)
-      old_needs_value = @needs_value
-      @needs_value = false
+      last = node.expressions.last
 
-      last_index = node.expressions.size - 1
-      node.expressions.each_with_index do |exp, i|
-        @needs_value = true if old_needs_value && i == last_index
-        accept exp
+      request_value(false) do
+        node.expressions.each do |exp|
+          break if exp == last
+          accept exp
+        end
       end
 
-      @needs_value = old_needs_value
+      accept last
       false
     end
 
@@ -639,6 +638,12 @@ module Crystal
       execute_ensures_until(node.target.as(Def))
 
       @last = old_last
+
+      # Dereference lvars, except the return value
+      # If not assigned by the caller, it will be dereferenced as @last
+      context.vars.each do |name, var|
+        accept Call.new(Var.new(name), "dereference", [] of ASTNode) if var.type.reference_like? && node.is_a?(Var) && var.pointer != @last
+      end
 
       if return_phi = context.return_phi
         return_phi.add @last, node_type
@@ -922,7 +927,7 @@ module Crystal
     end
 
     def codegen_assign(target : Underscore, value, node)
-      accept value
+      request_value(false) { accept value }
       false
     end
 
@@ -998,7 +1003,10 @@ module Crystal
         llvm_value = check_proc_is_not_closure(llvm_value, target.type)
       end
 
+      # TODO: think of concurrency
+      accept Call.new(target, "dereference", [] of ASTNode) if target.type.reference_like?
       assign ptr, target_type, value.type, llvm_value
+      accept Call.new(target, "add_reference", [] of ASTNode) if target.type.reference_like?
 
       false
     end
@@ -1098,6 +1106,7 @@ module Crystal
           end
 
           ptr = get_global var.name, var.type, var.var
+          # TODO: handle ref counting
           assign ptr, var.type, value.type, @last
           return false
         end
@@ -1114,14 +1123,9 @@ module Crystal
     def visit(node : UninitializedVar)
       var = node.var
 
-      case var
-      when Var
+      if var.is_a?(Var)
         llvm_var = declare_var var
-        if node.type.nil_type? || !@needs_value
-          @last = llvm_nil
-        else
-          @last = to_lhs(llvm_var.pointer, node.type)
-        end
+        @last = (node.type.nil_type? || !@needs_value) ? llvm_nil : to_lhs(llvm_var.pointer, node.type)
       else
         @last = llvm_nil
       end
@@ -1814,6 +1818,7 @@ module Crystal
     end
 
     def allocate_aggregate(type)
+      # TODO - we could allocate values on the stack too if they are strictly local
       struct_type = llvm_struct_type(type)
       if type.passed_by_value?
         @last = alloca struct_type
@@ -1875,6 +1880,7 @@ module Crystal
 
           accept init.value
 
+          # TODO: handle refcounting
           ivar_ptr = instance_var_ptr real_type, init.name, type_ptr
           assign ivar_ptr, ivar.type, init.value.type, @last
         end

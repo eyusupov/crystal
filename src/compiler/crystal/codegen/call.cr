@@ -64,16 +64,12 @@ class Crystal::CodeGenVisitor
     is_primitive = target_def.body.is_a?(Primitive)
 
     call_args = Array(LLVM::Value).new(node.args.size + 1)
-    old_needs_value = @needs_value
 
     obj = node.obj
 
     # Always accept obj: even if it's not passed as self this might
     # involve intermerdiate calls with side effects.
-    if obj
-      @needs_value = true
-      accept obj
-    end
+    request_value { accept obj } if obj
 
     # First self.
     if owner.passed_as_self?
@@ -96,22 +92,20 @@ class Crystal::CodeGenVisitor
 
     # Then the arguments.
     node.args.zip(target_def.args) do |arg, def_arg|
-      @needs_value = true
-      accept arg
+      request_value { accept arg }
 
-      if arg.type.void?
-        call_arg = int8(0)
-      else
-        call_arg = @last
-        call_arg = llvm_nil if arg.type.nil_type?
-        call_arg = downcast(call_arg, def_arg.type, arg.type, true)
+      call_arg = case
+        when arg.type.void?
+          int8(0)
+        when arg.type.nil_type?
+          llvm_nil
+        else
+          downcast(@last, def_arg.type, arg.type, true)
       end
 
       # - C calling convention passing needs a separate handling of pass-by-value
       # - Primitives might need a separate handling (for example invoking a Proc)
-      if arg.type.passed_by_value? && !c_calling_convention && !is_primitive
-        call_arg = load(call_arg)
-      end
+      call_arg = load(call_arg) if arg.type.passed_by_value? && !c_calling_convention && !is_primitive
 
       call_args << call_arg
     end
@@ -141,8 +135,6 @@ class Crystal::CodeGenVisitor
       end
     end
 
-    @needs_value = old_needs_value
-
     {call_args, false}
   end
 
@@ -161,7 +153,6 @@ class Crystal::CodeGenVisitor
     abi_info = call_abi_info(target_def, node)
 
     call_args = Array(LLVM::Value).new(node.args.size + 1)
-    old_needs_value = @needs_value
 
     if abi_info.return_type.attr == LLVM::Attribute::StructRet
       sret_value = @sret_value = alloca abi_info.return_type.type
@@ -182,8 +173,7 @@ class Crystal::CodeGenVisitor
           arg.raise "BUG: out argument was #{exp}"
         end
       else
-        @needs_value = true
-        accept arg
+        request_value { accept arg }
 
         if arg.type.void?
           call_arg = int8(0)
@@ -227,8 +217,6 @@ class Crystal::CodeGenVisitor
         # Ignore
       end
     end
-
-    @needs_value = old_needs_value
 
     {call_args, has_out}
   end
@@ -284,9 +272,7 @@ class Crystal::CodeGenVisitor
         Phi.open(self, node) do |phi|
           context.return_phi = phi
 
-          request_value do
-            accept target_def.body
-          end
+          request_value { accept target_def.body }
 
           phi.add @last, target_def.body.type?, last: true
         end
@@ -306,13 +292,11 @@ class Crystal::CodeGenVisitor
 
   def codegen_dispatch(node, target_defs)
     new_vars = context.vars.dup
-    old_needs_value = @needs_value
 
     # Get type_id of obj or owner
     if node_obj = node.obj
       owner = node_obj.type
-      @needs_value = true
-      accept node_obj
+      request_value { accept node_obj }
       obj_type_id = @last
     elsif node.uses_with_scope? && (with_scope = node.with_scope)
       owner = with_scope
@@ -347,7 +331,7 @@ class Crystal::CodeGenVisitor
     with_cloned_context do
       context.vars = new_vars
 
-      Phi.open(self, node, old_needs_value) do |phi|
+      Phi.open(self, node, @needs_value) do |phi|
         # Iterate all defs and check if any match the current types, given their ids (obj_type_id and arg_type_ids)
         target_defs.each do |a_def|
           if is_super
@@ -385,8 +369,6 @@ class Crystal::CodeGenVisitor
         unreachable
       end
     end
-
-    @needs_value = old_needs_value
   end
 
   def codegen_call(node, target_def, self_type, call_args)
@@ -471,56 +453,45 @@ class Crystal::CodeGenVisitor
       @last.call_convention = call_convention
     end
 
-    if @builder.end
-      return @last
-    end
+    return @last if @builder.end
 
-    set_call_attributes node, target_def, self_type, is_closure, fun_type
+    unreachable if type.no_return?
 
-    external = target_def.try &.c_calling_convention?
+    set_call_attributes(node, target_def, self_type, is_closure, fun_type)
 
-    if external && (external.type.proc? || external.type.is_a?(NilableProcType))
-      fun_ptr = bit_cast(@last, llvm_context.void_pointer)
-      ctx_ptr = llvm_context.void_pointer.null
-      return @last = make_fun(external.type, fun_ptr, ctx_ptr)
-    end
-
-    if external
-      if type.no_return?
-        unreachable
-      else
-        abi_return = abi_info(external).return_type
-        case abi_return.kind
-        when LLVM::ABI::ArgKind::Direct
-          if cast = abi_return.cast
-            cast1 = alloca cast
-            store @last, cast1
-            cast2 = bit_cast cast1, llvm_context.void_pointer
-            final_value = alloca abi_return.type
-            final_value_casted = bit_cast final_value, llvm_context.void_pointer
-            size = @abi.size(abi_return.type)
-            align = @abi.align(abi_return.type)
-            memcpy(final_value_casted, cast2, int32(size), int32(align), int1(0))
-            @last = final_value
-          end
-        when LLVM::ABI::ArgKind::Indirect
-          @last = @sret_value.not_nil!
-        when LLVM::ABI::ArgKind::Ignore
-          # Nothing
-        end
+    if external = target_def.try &.c_calling_convention?
+      if (external.type.proc? || external.type.is_a?(NilableProcType))
+        fun_ptr = bit_cast(@last, llvm_context.void_pointer)
+        ctx_ptr = llvm_context.void_pointer.null
+        return make_fun(external.type, fun_ptr, ctx_ptr)
       end
-    else
-      case type
-      when .no_return?
-        unreachable
-      when .passed_by_value?
-        if @needs_value
-          union = alloca llvm_type(type)
-          store @last, union
-          @last = union
-        else
-          @last = llvm_nil
+
+      abi_return = abi_info(external).return_type
+      case abi_return.kind
+      when LLVM::ABI::ArgKind::Direct
+        if cast = abi_return.cast
+          cast1 = alloca cast
+          store @last, cast1
+          cast2 = bit_cast cast1, llvm_context.void_pointer
+          final_value = alloca abi_return.type
+          final_value_casted = bit_cast final_value, llvm_context.void_pointer
+          size = @abi.size(abi_return.type)
+          align = @abi.align(abi_return.type)
+          memcpy(final_value_casted, cast2, int32(size), int32(align), int1(0))
+          @last = final_value
         end
+      when LLVM::ABI::ArgKind::Indirect
+        @last = @sret_value.not_nil!
+      when LLVM::ABI::ArgKind::Ignore
+        # Nothing
+      end
+    elsif type.passed_by_value?
+      if @needs_value
+        union = alloca llvm_type(type)
+        store @last, union
+        @last = union
+      else
+        @last = llvm_nil
       end
     end
 

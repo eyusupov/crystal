@@ -8,18 +8,21 @@ module GC
   module RefCount
     macro included 
       # TODO: check if atomic is already atomic on x86? Does llvm generate optimal code?
-      @reference_count = Atomic.new(0_u32)
+      @reference_count = Atomic.new(1_u32)
     end
 
+    @[AlwaysInline]
     def reference_count
       @reference_count.get
     end
 
+    @[AlwaysInline]
     def add_reference
       # TODO: use release memory order
       @reference_count.add(1)
     end
 
+    @[AlwaysInline]
     def dereference
       # TODO: use acquire memory ordering
       count = @reference_count.sub(1)
@@ -27,6 +30,7 @@ module GC
       GC.free(self) if count.zero?
     end
 
+    @[AlwaysInline]
     def free
       # other client 
       count = @reference_count.get

@@ -87,7 +87,7 @@ module Crystal
     end
 
     def pretty_print(pp)
-      pp.text to_s
+      pp.text inspect
     end
 
     # It yields itself for any node, but `Expressions` yields first node
