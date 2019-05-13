@@ -66,7 +66,7 @@ class Crystal::Scheduler
     {% end %}
 
     current, @current = @current, fiber
-    Fiber.swapcontext(pointerof(current.@context), pointerof(fiber.@context))
+    Fiber.swapcontext(pointerof(current.@context).as(Void*), pointerof(fiber.@context).as(Void*))
 
     {% if flag?(:preview_mt) %}
       GC.unlock_read
