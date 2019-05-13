@@ -12,6 +12,10 @@
 # Invoking `new` on a `Reference` allocates a new instance on the heap.
 # The instance's memory is automatically freed (garbage-collected) when
 # the instance is no longer referred by any other entity in the program.
+{% if flag?(:gc_refcount) %}
+  require "gc/refcount"
+{% end %}
+
 class Reference
   {% if flag?(:gc_refcount) %}
   extend GC::RefCount

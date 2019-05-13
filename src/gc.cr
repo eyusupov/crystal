@@ -60,9 +60,7 @@ module GC
   end
 end
 
-{% if flag?(:gc_refcount) %}
-  require "gc/refcount"
-{% elsif flag?(:gc_none) %}
+{% if flag?(:gc_none) %}
   require "gc/none"
 {% else %}
   require "gc/boehm"
