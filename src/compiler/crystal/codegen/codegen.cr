@@ -642,7 +642,7 @@ module Crystal
       # Dereference lvars, except the return value
       # If not assigned by the caller, it will be dereferenced as @last
       context.vars.each do |name, var|
-        accept Call.new(Var.new(name), "dereference", [] of ASTNode) if var.type.reference_like? && node.is_a?(Var) && var.pointer != @last
+        codegen_dereference(Var.new(name)) if var.type.reference_like? && node.is_a?(Var) && var.pointer != @last
       end
 
       if return_phi = context.return_phi
