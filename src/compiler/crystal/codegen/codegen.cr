@@ -399,6 +399,7 @@ module Crystal
         file_module = @program.file_module(node.filename)
         if vars = file_module.vars?
           set_current_debug_location Location.new(node.filename, 1, 1) if @debug.line_numbers?
+          STDERR.puts "FileNode vars: #{vars}"
           alloca_vars vars, file_module
 
           emit_vars_debug_info(vars) if @debug.variables?
@@ -642,7 +643,7 @@ module Crystal
       # Dereference lvars, except the return value
       # If not assigned by the caller, it will be dereferenced as @last
       context.vars.each do |name, var|
-        codegen_dereference(Var.new(name)) if var.type.reference_like? && node.is_a?(Var) && var.pointer != @last
+        codegen_dereference(node, Var.new(name)) if var.type.reference_like? && node.is_a?(Var) && var.pointer != @last
       end
 
       if return_phi = context.return_phi
@@ -923,6 +924,7 @@ module Crystal
       return false if node.discarded?
 
       target, value = node.target, node.value
+      STDERR.puts "visit assign: #{node}"
       codegen_assign(target, value, node)
     end
 
@@ -958,9 +960,7 @@ module Crystal
         return false
       end
 
-      request_value do
-        accept value
-      end
+      request_value { accept value }
 
       return if value.no_returns?
 
@@ -1004,9 +1004,9 @@ module Crystal
       end
 
       # TODO: think of concurrency
-      accept Call.new(target, "dereference", [] of ASTNode) if target.type.reference_like?
+      codegen_dereference(target, target) if target.type.reference_like?
       assign ptr, target_type, value.type, llvm_value
-      accept Call.new(target, "add_reference", [] of ASTNode) if target.type.reference_like?
+      codegen_add_reference(target, target) if target.type.reference_like?
 
       false
     end
@@ -1674,6 +1674,7 @@ module Crystal
     end
 
     def alloca_vars(vars, obj = nil, args = nil, parent_context = nil)
+      STDERR.puts "alloca_vars:\nvars: #{vars}\nobj: #{obj}\nargs: #{args}\nbacktrace:\n#{caller.join("\n")}"
       self_closured = obj.is_a?(Def) && obj.self_closured?
       closured_vars = closured_vars(vars, obj)
       alloca_non_closured_vars(vars, obj, args)

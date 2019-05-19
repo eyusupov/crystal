@@ -28,6 +28,7 @@ class Crystal::CodeGenVisitor
   end
 
   def declare_fun(mangled_name, func)
+    STDERR.puts "declare_fun: #{mangled_name} #{func}"
     param_types = @llvm_typer.copy_types(func.params.types)
     return_type = @llvm_typer.copy_type(func.return_type)
 
@@ -49,6 +50,7 @@ class Crystal::CodeGenVisitor
   end
 
   def codegen_fun(mangled_name, target_def, self_type, is_exported_fun = false, fun_module_info = type_module(self_type), is_fun_literal = false, is_closure = false)
+    STDERR.puts "codegen_fun: #{mangled_name} #{target_def}"
     old_position = insert_block
     old_entry_block = @entry_block
     old_alloca_block = @alloca_block
